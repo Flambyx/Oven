@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"os"
+	"path/filepath"
 )
 
 type UbuntuProvider struct {
@@ -68,4 +70,35 @@ func (u *UbuntuProvider) ISOFilename(version string) string {
 		return fmt.Sprintf("ubuntu-%s-live-server-amd64.iso", version)
 	}
 	return filename
+}
+
+func (u *UbuntuProvider) SquashfsPath(mountDir string) (string, error) {
+	candidates := []string{
+		filepath.Join(mountDir, "casper", "filesystem.squashfs"),
+		filepath.Join(mountDir, "casper", "ubuntu-server-minimal.squashfs"),
+		filepath.Join(mountDir, "install", "filesystem.squashfs"),
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	var found string
+	filepath.Walk(mountDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if filepath.Ext(path) == ".squashfs" {
+			found = path
+		}
+		return nil
+	})
+
+	if found != "" {
+		return found, nil
+	}
+
+	return "", fmt.Errorf("no squashfs filesystem found in Ubuntu ISO")
 }

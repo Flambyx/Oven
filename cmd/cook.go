@@ -3,9 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Flambyx/oven/internal/config"
 	"github.com/Flambyx/oven/internal/downloader"
+	"github.com/Flambyx/oven/internal/extractor"
+	"github.com/Flambyx/oven/internal/providers"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +28,14 @@ var cookCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+
 		fmt.Printf("Cooking %s (%s %s)...\n", cfg.Name, cfg.Base.Distro, cfg.Base.Version)
+
+		provider, ok := providers.Registry[cfg.Base.Distro]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Error: unsupported distro: %s\n", cfg.Base.Distro)
+			os.Exit(1)
+		}
 
 		isoPath, err := downloader.Fetch(cfg.Base.Distro, cfg.Base.Version)
 		if err != nil {
@@ -33,6 +43,18 @@ var cookCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		fmt.Printf("ISO ready: %s\n", isoPath)
+
+		workDir := filepath.Join(os.TempDir(), "oven-"+cfg.Name)
+		ext, err := extractor.New(workDir, provider)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := ext.Extract(isoPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
