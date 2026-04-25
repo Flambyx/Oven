@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
+	"github.com/schollz/progressbar/v3"
 	"github.com/Flambyx/oven/internal/providers"
 )
 
@@ -95,7 +95,12 @@ func download(url, dest string) error {
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	bar := progressbar.DefaultBytes(
+		resp.ContentLength,
+		"Downloading",
+	)
+
+	if _, err := io.Copy(io.MultiWriter(f, bar), resp.Body); err != nil {
 		return fmt.Errorf("could not write file: %w", err)
 	}
 	return nil
