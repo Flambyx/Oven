@@ -57,7 +57,7 @@ var cookCmd = &cobra.Command{
 		}
 
 		b := builder.New(workDir, provider)
-		if err := b.Build(cfg.Packages); err != nil {
+		if err := b.Build(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

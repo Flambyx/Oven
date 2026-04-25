@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/Flambyx/oven/internal/config"
 )
 
 type UbuntuProvider struct {
@@ -104,26 +106,74 @@ func (u *UbuntuProvider) SquashfsPath(mountDir string) (string, error) {
 	return "", fmt.Errorf("no squashfs filesystem found in Ubuntu ISO")
 }
 
-func (u *UbuntuProvider) InstallPackages(chrootDir string, packages []string) error {
-	updateCmd := exec.Command("chroot", chrootDir, "apt-get", "update")
-	updateCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	updateCmd.Stdout = os.Stdout
-	updateCmd.Stderr = os.Stderr
-	if err := updateCmd.Run(); err != nil {
+func cleanEnv() []string {
+	return []string{
+		"DEBIAN_FRONTEND=noninteractive",
+		"HOME=/root",
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"LANG=C",
+		"LC_ALL=C",
+	}
+}
+
+func (u *UbuntuProvider) UpdatePackageIndex(chrootDir string) error {
+	cmd := exec.Command("chroot", chrootDir, "apt-get", "update")
+	cmd.Env = cleanEnv()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("apt-get update failed: %w", err)
 	}
+	return nil
+}
 
-	args := append([]string{
-		chrootDir,
-		"apt-get", "install", "-y", "--fix-missing",
-	}, packages...)
+func (u *UbuntuProvider) InstallPackages(chrootDir string, packages []string) error {
+	args := append([]string{chrootDir, "apt-get", "install", "-y", "--fix-missing"}, packages...)
+	cmd := exec.Command("chroot", args...)
+	cmd.Env = cleanEnv()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("apt-get install failed: %w", err)
+	}
+	return nil
+}
 
-	installCmd := exec.Command("chroot", args...)
-	installCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+func (u *UbuntuProvider) ConfigureLocale(chrootDir string, locale config.Locale) error {
+	if locale.Lang == "" {
+		return nil
+	}
+
+	installCmd := exec.Command("chroot", chrootDir, "apt-get", "install", "-y", "locales")
+	installCmd.Env = cleanEnv()
 	installCmd.Stdout = os.Stdout
 	installCmd.Stderr = os.Stderr
 	if err := installCmd.Run(); err != nil {
-		return fmt.Errorf("apt-get install failed: %w", err)
+		return fmt.Errorf("could not install locales package: %w", err)
+	}
+
+	localeGen := filepath.Join(chrootDir, "etc", "locale.gen")
+	entry := locale.Lang + " UTF-8\n"
+	if err := os.WriteFile(localeGen, []byte(entry), 0644); err != nil {
+		return fmt.Errorf("could not write locale.gen: %w", err)
+	}
+
+	cmd := exec.Command("chroot", chrootDir, "locale-gen")
+	cmd.Env = cleanEnv()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("locale-gen failed: %w", err)
+	}
+
+	localeConf := fmt.Sprintf("LANG=%s\nLC_ALL=%s\n", locale.Lang, locale.Lang)
+	if err := os.WriteFile(filepath.Join(chrootDir, "etc", "locale.conf"), []byte(localeConf), 0644); err != nil {
+		return fmt.Errorf("could not write locale.conf: %w", err)
+	}
+
+	defaultLocale := fmt.Sprintf("LANG=%s\n", locale.Lang)
+	if err := os.WriteFile(filepath.Join(chrootDir, "etc", "default", "locale"), []byte(defaultLocale), 0644); err != nil {
+		return fmt.Errorf("could not write /etc/default/locale: %w", err)
 	}
 
 	return nil
