@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -101,4 +102,29 @@ func (u *UbuntuProvider) SquashfsPath(mountDir string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no squashfs filesystem found in Ubuntu ISO")
+}
+
+func (u *UbuntuProvider) InstallPackages(chrootDir string, packages []string) error {
+	updateCmd := exec.Command("chroot", chrootDir, "apt-get", "update")
+	updateCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	updateCmd.Stdout = os.Stdout
+	updateCmd.Stderr = os.Stderr
+	if err := updateCmd.Run(); err != nil {
+		return fmt.Errorf("apt-get update failed: %w", err)
+	}
+
+	args := append([]string{
+		chrootDir,
+		"apt-get", "install", "-y", "--fix-missing",
+	}, packages...)
+
+	installCmd := exec.Command("chroot", args...)
+	installCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	installCmd.Stdout = os.Stdout
+	installCmd.Stderr = os.Stderr
+	if err := installCmd.Run(); err != nil {
+		return fmt.Errorf("apt-get install failed: %w", err)
+	}
+
+	return nil
 }

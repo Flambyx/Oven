@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
+	"github.com/Flambyx/oven/internal/builder"
 	"github.com/Flambyx/oven/internal/config"
 	"github.com/Flambyx/oven/internal/downloader"
 	"github.com/Flambyx/oven/internal/extractor"
@@ -52,6 +52,12 @@ var cookCmd = &cobra.Command{
 		}
 
 		if err := ext.Extract(isoPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		b := builder.New(workDir, provider)
+		if err := b.Build(cfg.Packages); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

@@ -5,6 +5,7 @@ type DistroProvider interface {
 	ChecksumURL(version string) (string, error)
 	ISOFilename(version string) string
 	SquashfsPath(mountDir string) (string, error)
+	InstallPackages(chrootDir string, packages []string) error
 }
 
 var Registry = map[string]DistroProvider{
