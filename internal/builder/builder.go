@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,95 @@ func (b *Builder) Build(cfg *config.Config) error {
 		fmt.Println("Packages installed")
 	}
 
+	if len(cfg.Files) > 0 {
+		fmt.Println("Copying files...")
+		if err := b.copyFiles(chrootDir, cfg.Files); err != nil {
+			return fmt.Errorf("file copy failed: %w", err)
+		}
+		fmt.Println("Files copied")
+	}
+
+	return nil
+}
+
+func (b *Builder) copyFiles(chrootDir string, files []config.File) error {
+	for _, f := range files {
+		if err := b.copyFile(chrootDir, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *Builder) copyFile(chrootDir string, f config.File) error {
+	srcInfo, err := os.Stat(f.Src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("source not found: %s", f.Src)
+		}
+		return fmt.Errorf("could not stat source %s: %w", f.Src, err)
+	}
+
+	if srcInfo.IsDir() {
+		return b.copyDir(chrootDir, f.Src, f.Dest)
+	}
+
+	return b.copySingleFile(chrootDir, f.Src, f.Dest)
+}
+
+func (b *Builder) copyDir(chrootDir, srcDir, destDir string) error {
+	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return fmt.Errorf("error walking %s: %w", path, err)
+		}
+
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return fmt.Errorf("could not compute relative path for %s: %w", path, err)
+		}
+
+		dest := filepath.Join(destDir, rel)
+
+		if info.IsDir() {
+			if err := os.MkdirAll(filepath.Join(chrootDir, dest), info.Mode()); err != nil {
+				return fmt.Errorf("could not create directory %s: %w", dest, err)
+			}
+			return nil
+		}
+
+		return b.copySingleFile(chrootDir, path, dest)
+	})
+}
+
+func (b *Builder) copySingleFile(chrootDir, src, dest string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("could not stat %s: %w", src, err)
+	}
+
+	fullDest := filepath.Join(chrootDir, dest)
+
+	if err := os.MkdirAll(filepath.Dir(fullDest), 0755); err != nil {
+		return fmt.Errorf("could not create destination directory for %s: %w", dest, err)
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("could not open source file %s: %w", src, err)
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(fullDest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("could not create destination file %s: %w", dest, err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return fmt.Errorf("could not copy %s to %s: %w", src, dest, err)
+	}
+
+	fmt.Printf("  %s -> %s\n", src, dest)
 	return nil
 }
 
